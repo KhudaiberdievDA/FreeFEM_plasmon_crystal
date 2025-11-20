@@ -1,0 +1,213 @@
+load	"Element_Mixte"
+
+/* Parameters. */
+
+//verbosity = 0;
+
+real stripe = 23.0 / 25;		// Fraction of metal.
+real inlen = 4;				// Length of incident side.
+real outlen = 4;			// Length of outgoing side.
+real d = 50.0 / 25;			// Dielectric thickness.
+complex dieleps = 12;			// Dielectric epsilon.
+real sigma0 = 5;			// 2D conductivity 4 * pi * sigma / c.
+real tau = 1.0 / (2 * pi * 25e-4 * 1.5);	// c * tau / period.
+real k = 0.8;				// Wavevector times period.
+					// Period is set to 1.0.
+int nin = 20 * inlen;			// Discretization of incident side.
+int nout = 20 * outlen;			// Discretization of outgoing side.
+int ninh = 10 * inlen;			// Discretization of incident side.
+int nouth = 10 * outlen;		// Discretization of outgoing side.
+int n = 5;				// Discretization of periodic side.
+int nst = 100 * stripe;			// Discretization of a stripe.
+int nmid = 20;				// Discretization of a midline.
+int nanim = 40;				// Number of animation frames.
+
+real delta = stripe * pi^2 / 16 / nst^2; // Smallest cell size.
+
+/* Exponents for nodes distribution on in and out sides. */
+real alphainr = log((inlen / (stripe * pi / 4 / nst) - 1) / nin);
+real alphaoutr = log((outlen / (stripe * pi / 4 / nst) - 1) / nout);
+real alphainl = log((inlen / ((1 - stripe) / nmid) - 1) / nin);
+real alphaoutl = log((outlen / ((1 - stripe) / nmid) - 1) / nout);
+
+/* Labels identifiers. */
+int lb = 1;
+int rb = 2;
+int inl = 3;
+int outl = 4;
+int st = 5;
+
+/* Homogeneously spaced borders (half of geometry). */
+border leftinh(t = 0, 1){x = 0; y = -t * inlen; label = lb;}
+border leftouth(t = 1, 0){x = 0; y = t * outlen; label = lb;}
+border rightouth(t = 0, 1){x = 0.5; y = t * outlen; label = rb;}
+border rightinh(t = 1, 0){x = 0.5; y = -t * inlen; label = rb;}
+border stripeb(t = 0, 0.5){x = t; y = 0; label = st;}
+
+/* Outer borders (half of geometry). */
+border leftin(t = 0, 1){x = 0; y = -(exp(alphainl * t) - 1) /
+    (exp(alphainl) - 1) * inlen; label = lb;}
+border leftout(t = 1, 0){x = 0; y = (exp(alphaoutl * t) - 1) /
+    (exp(alphaoutl) - 1) * outlen; label = lb;}
+border rightout(t = 0, 1){x = 0.5; y = (exp(alphaoutr * t) - 1) /
+    (exp(alphaoutr) - 1) * outlen; label = rb;}
+border rightin(t = 1, 0){x = 0.5; y = -(exp(alphainr * t) - 1) /
+    (exp(alphainr) - 1) * inlen; label = rb;}
+border in(t = 0, 0.5){x = t; y = -inlen; label = inl;}
+border out(t = 0.5, 0){x = t; y = outlen; label = outl;}
+
+/* Metal stripe (half). */
+border stripebh(t = 0, pi / 2){x = 0.5 - 0.5 * stripe * cos(t); y = 0;
+    label = st;}
+
+/* Mesh. */
+mesh Th = buildmesh(in(n) + out(n) +
+    rightin(nin) + rightout(nout) + leftout(nout) + leftin(nin) +
+    stripebh(nst));
+//    rightinh(ninh) + rightouth(nouth) + leftouth(nouth) + leftinh(ninh) +
+//    stripeb(n));
+
+/* Dielectric permittivity. */
+func epsilon = 1 + (dieleps - 1) * ((y > 0) && (y < d));
+
+/* Drude conductivity. */
+func sigma = sigma0 / (1 - 1i * k * tau);
+
+/* Electrodynamic problem, E||z polarization. */
+varf dynamice(u, v)
+	= int2d(Th) ([dx(v), dy(v)]' * [dx(u), dy(u)] -
+	    epsilon * k^2 * v * u)
+	- int1d(Th, st) (1i * k * sigma * v * u)
+	- int1d(Th, outl) (1i * k * v * u)
+	+ on(inl, u = 1);
+
+/* Electrodynamic problem, H||z polarization. */
+varf dynamich([ux, uy], [vx, vy])
+	= int2d(Th) ((dx(vy) - dy(vx)) * (dx(uy) - dy(ux)) -
+	    epsilon * k^2 * [vx, vy]' * [ux, uy])
+	- int1d(Th, st) (1i * k * sigma *
+	    (N.y * vx - N.x * vy) * (N.y * ux - N.x * uy))
+	- int1d(Th, outl) (1i * k *
+	    (N.y * vx - N.x * vy) * (N.y * ux - N.x * uy))
+	+ on(inl, lb, rb, ux = 1, uy = 0);
+
+/* E||z (scalar) and H||xy (vector) function spaces. */
+fespace Sh(Th, P2);
+fespace Vh(Th, [P1, P1]);
+
+/* E||xy (Nedelec, edge) and H||z (scalar) function spaces. */
+fespace Veh(Th, RT1Ortho);
+fespace Seh(Th, P1);
+
+/* Auxiliary scalar field. */
+Sh aux;
+
+/*
+ * E||z polarization.
+ */
+
+/* Unknown field. */
+Sh<complex> Ez;
+
+/* Solve dynamic linear system. */
+{
+	matrix<complex> A = dynamice(Sh, Sh);
+	complex[int] b = dynamice(0, Sh);
+	Ez[] = A^-1 * b;
+}
+
+/* Magnetic field. */
+Vh<complex> [Hx, Hy] = [-1i / k * dy(Ez), 1i / k * dx(Ez)];
+
+/* Output dynamic results. */
+plot(Ez, value = true, fill = true, wait = true);
+
+/* Find the amplitude of the waves. */
+aux = abs(Ez);
+real am = aux[].max;
+real step = am / 20;
+
+/* Visualize the wave. */
+real[int] viso = -(am + step):step:(am + step);
+for (int i = 0; i < -nanim; i++) {
+	aux = real(Ez) * cos(2 * pi * i / nanim) +
+	    imag(Ez) * sin(2 * pi * i / nanim);
+	plot(aux, value = true, fill = true, viso = viso, dim = 2);
+}
+
+/*
+ * H||z polarization.
+ */
+
+/* Unknown field. */
+Veh<complex> [Ex, Ey];
+
+/* Solve dynamic linear system. */
+{
+	matrix<complex> A = dynamich(Veh, Veh);
+	complex[int] b = dynamich(0, Veh);
+	Ex[] = A^-1 * b;
+}
+
+/* Magnetic field. */
+Seh<complex> Hz = -1i / k * (dx(Ey) - dy(Ex));
+
+/* Output dynamic results. */
+plot(Hz, value = true, fill = true, wait = true);
+
+/* Find the amplitude of the waves. */
+aux = abs(Hz);
+am = aux[].max;
+step = am / 20;
+
+/* Visualize the wave. */
+viso = -(am + step):step:(am + step);
+for (int i = 0; i < -nanim; i++) {
+	aux = real(Hz) * cos(2 * pi * i / nanim) +
+	    imag(Hz) * sin(2 * pi * i / nanim);
+	plot(aux, value = true, fill = true, viso = viso, dim = 2);
+}
+
+/* Example of symmetry extension. */
+mesh Ih = square(n, ninh + nouth,
+    [-0.5 + 0.5 * x, -inlen + (outlen + inlen) * y]);
+fespace Sih(Ih, P2);
+Sih<complex> Ei = Hz(-x, y);
+plot(Ei, Hz, value = true, fill = true, wait = true);
+
+/* Calculate transmittance (and reflectance) spectrum. */
+cout << "# k\tR_el\tT_el\tR_magn\tT_magn" << endl;
+for (k = 0.005; k < 1; k += 0.005) {
+	/* Solve  E||z polarization. */
+	{
+		matrix<complex> A = dynamice(Sh, Sh);
+		complex[int] b = dynamice(0, Sh);
+		Ez[] = A^-1 * b;
+	}
+
+	/* Decomposition into incident, reflected and transmitted waves. */
+	complex a1 = Ez(0, -inlen);
+	complex a2 = Ez(0, -inlen / 2);
+	complex a3 = Ez(0, outlen);
+	complex factor = exp(-1i * k * inlen / 2);
+	real R = abs((a1 - a2 * factor) / (a2 - a1 * factor))^2;
+	real T = 4 * sin(k * inlen / 2)^2 * abs(a3 / (a2 - a1 * factor))^2;
+	cout << k << "\t" << R << "\t" << T << "\t";
+
+	/* Solve H||z polarization. */
+	{
+		matrix<complex> A = dynamich(Veh, Veh);
+		complex[int] b = dynamich(0, Veh);
+		Ex[] = A^-1 * b;
+	}
+	Hz = -1i / k * (dx(Ey) - dy(Ex));
+
+	/* Decomposition into incident, reflected and transmitted waves. */
+	a1 = Hz(0, -inlen);
+	a2 = Hz(0, -inlen / 2);
+	a3 = Hz(0, outlen);
+	factor = exp(-1i * k * inlen / 2);
+	R = abs((a1 - a2 * factor) / (a2 - a1 * factor))^2;
+	T = 4 * sin(k * inlen / 2)^2 * abs(a3 / (a2 - a1 * factor))^2;
+	cout << R << "\t" << T << endl;
+}

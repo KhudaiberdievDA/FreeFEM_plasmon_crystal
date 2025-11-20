@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<fits>
+	<!-- tau = 2.654418e-12 / gamma (s) -->
+	<!-- m/m_e = 0.933729 / omega_c1 -->
+	<!-- n = 3.311207e12 * sigma * gamma / omega_c1 (1/cm^2) -->
+	<!-- mobility = omega_c1 / (2 * gamma) (m^2/V/s) -->
+	<!-- k_b/(hc) = 0.695036 (1/cm/K) -->
+	<!-- e_f = F_0 n / D * omega_c1; F_0 * 1e11 / 1 T = 4.13567 -->
+	<substrate d_fit_flag="1" d="0.563932" gate_fit_flag="0" gate="0" re_eps_fit_flag="0" re_eps="12" im_eps_fit_flag="0" im_eps="0"/>
+	<model theory_type="0" activate="1" sigma_fit_flag="1" sigma="0.976884" gamma_fit_flag="1" gamma="2.13017" omega_fit_flag="1" omega="-65.6184"/>
+	<experiment data_type="4096" freq_fit_flag="0" freq="0" temper_fit_flag="0" temper="1.86" k_fit_flag="0" abs_k="1" arg_k="0" tr_from_graph="2" tr_from_set="0" tr_to_graph="2" tr_to_set="10" ph_use="0" ph_from_graph="1" ph_from_set="0" ph_to_graph="1" ph_to_set="1" weight_use="0" weight_from_graph="2" weight_from_set="2"/>
+	<experiment data_type="4129" freq_fit_flag="1" freq="10.1711" temper_fit_flag="0" temper="1.86" k_fit_flag="1" abs_k="0.299261" arg_k="0" tr_from_graph="0" tr_from_set="0" tr_to_graph="0" tr_to_set="10" ph_use="0" ph_from_graph="1" ph_from_set="0" ph_to_graph="1" ph_to_set="1" weight_use="0" weight_from_graph="2" weight_from_set="2"/>
+	<experiment data_type="4129" freq_fit_flag="1" freq="12.638" temper_fit_flag="0" temper="1.86" k_fit_flag="1" abs_k="0.220303" arg_k="0" tr_from_graph="0" tr_from_set="1" tr_to_graph="0" tr_to_set="11" ph_use="0" ph_from_graph="1" ph_from_set="0" ph_to_graph="1" ph_to_set="1" weight_use="0" weight_from_graph="2" weight_from_set="2"/>
+	<experiment data_type="4129" freq_fit_flag="1" freq="15.2351" temper_fit_flag="0" temper="1.86" k_fit_flag="1" abs_k="0.49341" arg_k="0" tr_from_graph="0" tr_from_set="2" tr_to_graph="0" tr_to_set="12" ph_use="0" ph_from_graph="1" ph_from_set="0" ph_to_graph="1" ph_to_set="1" weight_use="0" weight_from_graph="2" weight_from_set="2"/>
+	<experiment data_type="4129" freq_fit_flag="1" freq="30.8703" temper_fit_flag="0" temper="1.86" k_fit_flag="1" abs_k="0.627417" arg_k="0" tr_from_graph="0" tr_from_set="3" tr_to_graph="0" tr_to_set="13" ph_use="0" ph_from_graph="1" ph_from_set="0" ph_to_graph="1" ph_to_set="1" weight_use="0" weight_from_graph="2" weight_from_set="2"/>
+	<experiment data_type="4129" freq_fit_flag="1" freq="33.383" temper_fit_flag="0" temper="1.86" k_fit_flag="1" abs_k="1.43932" arg_k="0" tr_from_graph="0" tr_from_set="4" tr_to_graph="0" tr_to_set="14" ph_use="0" ph_from_graph="1" ph_from_set="0" ph_to_graph="1" ph_to_set="1" weight_use="0" weight_from_graph="2" weight_from_set="2"/>
+</fits>
