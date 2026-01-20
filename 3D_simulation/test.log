@@ -1,0 +1,116 @@
+You chose the file "D:\Solid_State_Specroscopy_Group\FreeFEM_plasmon_crystal\FreeFEM_plasmon_crystal\3D_simulation\test.@É2x^edp"
+-- FreeFem++ v4.15 (Wed Dec 11 16:48:56 CET 2024 - git v4.15-7-gb1e524c8c)
+   file : D:\Solid_State_Specroscopy_Group\FreeFEM_plasmon_crystal\FreeFEM_plasmon_crystal\3D_simulation\test.edp
+ Load: lg_fem lg_mesh lg_mesh3 eigenvalue
+    1 : // FreeFEM++ test code for gmsh 3D mesh
+    2 : // Assumes mesh file is named "mesh.msh"
+    3 :
+    4 : load "msh3" (already loaded: msh3)
+    5 : load "medit"(load: loadLibary D:\Programs\FreeFem++\\.\medit = 0)
+    6 : load "gmsh"(load: loadLibary D:\Programs\FreeFem++\\.\gmsh = 0)
+    7 :
+    8 :
+    9 : // Load the 3D mesh from gmsh
+   10 : lockOrientation = false;
+   11 : mesh3 Th = gmshload3("circle.msh");
+   12 : plot(Th,wait=1);
+   13 : int[int] labs = labels(Th);
+   14 : lockOrientation = true;
+   15 :
+   16 : // Display mesh information
+   17 : cout << "=== Mesh Information ===" << endl;
+   18 : cout << "Number of tetrahedra: " << Th.nt << endl;
+   19 : cout << "Number of vertices: " << Th.nv << endl;
+   20 : cout << "Number of boundary elements: " << Th.nbe << endl;
+   21 :
+   22 : // Define a simple finite element space
+   23 : fespace Vh(Th, P1);
+   24 :
+   25 : // Test function: simple Poisson problem
+   26 : Vh u, v;
+   27 :
+   28 : // Define a simple problem to verify the mesh works
+   29 : problem Poisson(u, v) =
+   30 :     int3d(Th)(dx(u)*dx(v) + dy(u)*dy(v) + dz(u)*dz(v))  // Laplacian
+   31 :     + int3d(Th)(0*v)                                      // Source term
+   32 :     + on(1, u=0)                                          // Boundary condition on label 1
+   33 :     + on(8, u=0.5)
+   34 :     + on(2, u=1);                                          // Boundary condition on label 1
+   35 :     // + on(7, u=0);                                          // Boundary condition on label 1
+   36 :
+   37 : // Solve
+   38 : cout << "\n=== Solving test problem ===" << endl;
+   39 : Poisson;
+   40 :
+   41 :
+   42 : // Display solution statistics
+   43 : cout << "\nSolution statistics:" << endl;
+   44 : cout << "Min value: " << u[].min << endl;
+   45 : cout << "Max value: " << u[].max << endl;
+   46 :
+   47 : // Save solution for visualization
+   48 : savemesh(Th, "mesh_test.mesh");
+   49 : medit("TestSolution", Th, u, wait=1);
+   50 :
+   51 : // Optional: Check region labels
+   52 : cout << "\n=== Checking regions ===" << endl;
+   53 : int[int] reglabels = labels(Th);
+   54 : cout << "Physical volume labels found: ";
+   55 : for(int i = 0; i < reglabels.n; i++)
+   56 :     cout << reglabels[i] << " ";
+   57 : cout << endl;
+   58 :
+   59 : cout << "\n=== Test completed successfully ===" << endl; sizestack + 1024 =1628  ( 604 )
+ 
+139787 tetrahedrons
+25662 triangles
+165449 numElements
+  Plot::  Sorry no ps version for this type of plot 5
+=== Mesh Information ===
+Number of tetrahedra: 139787
+Number of vertices: 24472
+Number of boundary elements: 25662
+  -- FESpace: Nb of Nodes 24472 Nb of DoF 24472
+ 
+=== Solving test problem ===
+  -- Solve :
+          min 9.80029e-31  max 1
+ 
+Solution statistics:
+Min value: 9.80029e-31
+Max value: 1
+version de medit ffmedit.exe -popen -filebin -addsol 1  TestSolution
+  -- Medit,  Release 3.0a (Nov. 30, 2007)
+     Copyright (c) LJLL, 1999-2007.
+     compiled:  Wed Oct 19 14:42:24 CEST 2022 (with ff++ 4.11).
+ 
+medit with binary version of popen : mesh(es) and solution(s)
+mesh_name= TestSolution
+ Loading data file(s)
+End of mesh
+.sol: Dimension 3 (mesh)3 (lecture)1
+  Input seconds:     0.46
+ 
+ medit1()
+ 
+ Building scene(s)
+  Creating scene 1
+   Loading default options
+  Scene seconds:     0.16
+ 
+ Rendering scene(s)
+  Vertices 8534   Triangles 3374
+ 
+ Total running seconds:  145.20
+ Thank you for using Medit.
+ 
+=== Checking regions ===
+Physical volume labels found: 1 2 3 4 5 6 7 8 9
+ 
+=== Test completed successfully ===
+times: compile 0.074s, execution 150.906s,  mpirank:0
+ ######## unfreed pointers   150 Nb pointer,   0Bytes  ,  mpirank 0, memory leak =0
+ CodeAlloc : nb ptr  4087,  size :538816 mpirank: 0
+Ok: Normal End
+ try getConsole D:\Solid_State_Specroscopy_Group\FreeFEM_plasmon_crystal\FreeFEM_plasmon_crystal\3D_simulation\test.edp
+@É2x^

@@ -1,0 +1,195 @@
+load	"gmsh"
+load	"Element_Mixte"
+
+/* Parameters. */
+
+verbosity = 0;
+
+complex dieleps = 12;			// Dielectric epsilon.
+real sigma0 = 3;			// 2D conductivity 4 * pi * sigma / c.
+real gamma = 1.5 * 5 / sigma0;		// 1/Tau in cm^(-1)
+real tau = 1.0 / (2 * pi * gamma * 25e-4);	// c * tau / period.
+real k = 2 * pi * 25e-4 * 295 / 29.98;	// Wavevector times period.
+					// Period is set to 1.0.
+real kcr = 2 * pi * (-12.7) * 25e-4 * 2.5;
+					// Cyclotron resonance wave vector.
+complex polx = 1.0, polz = 0.0;		// Incident polarization.
+int nanim = 40;				// Number of animation frames.
+
+/* Labels and scale factor (should be synchronized with GMSH file). */
+int inl = 1;
+int outl = 2;
+int srcl = 3;
+int m1 = 4;
+int m2 = 5;
+int m3 = 6;
+int bl = 7;
+int st = 8;
+int back = 9;
+int diel = 10;
+int air = 11;
+real scale = 1.0 / 1e3;
+
+/* Conductivity tensor and tangential component of in-plane field. */
+macro stensor() ([[sigmaxx, sigmaxy], [-sigmaxy, sigmaxx]]) //
+macro et(ux, uy) (N.y * ux - N.x * uy) //
+
+/* Load mesh. */
+mesh Th = gmshload("stripe.msh");
+Th = movemesh(Th, [scale * x, scale * y]);
+
+/* Check the labels. */
+cout << "Labels: " << labels(Th) << endl;
+cout << "Area = " << Th.measure << endl;
+
+/* Get the positions of planes m1, m2, m3 and the back of the sample. */
+real y1 = int1d(Th, m1) (y) / int1d(Th, m1) (1);
+real y2 = int1d(Th, m2) (y) / int1d(Th, m2) (1);
+real y3 = int1d(Th, m3) (y) / int1d(Th, m3) (1);
+real d = int1d(Th, back) (y) / int1d(Th, back) (1);
+cout << "m1 = " << y1 << ", m2 = " << y2 << ", m3 = " << y3 <<
+    ", d = " << d << endl;
+
+/* Dielectric permittivity. */
+func epsilon = 1 * (Th(x, y).region == air) +
+    dieleps * (Th(x, y).region == diel);
+
+/* Drude conductivity. */
+func sigmaxx = sigma0  / ((1 - 1i * k * tau)^2 + (kcr * tau)^2) *
+    (1 - 1i * k * tau);
+func sigmaxy = sigma0 / ((1 - 1i * k * tau)^2 + (kcr * tau)^2) * kcr * tau;
+
+/* Electrodynamic problem, mixed polarizations. */
+varf dynamicboth([ux, uy, uz], [vx, vy, vz])
+	= int2d(Th) ([dx(vz), dy(vz)]' * [dx(uz), dy(uz)] +
+	    (dx(vy) - dy(vx)) * (dx(uy) - dy(ux)) -
+	    epsilon * k^2 * [vx, vy, vz]' * [ux, uy, uz])
+	- int1d(Th, st) (1i * k *
+	    [et(vx, vy), vz]' * stensor * [et(ux, uy), uz])
+	- int1d(Th, inl) (1i * k * [et(vx, vy), vz]' * [et(ux, uy), uz])
+	- int1d(Th, outl) (1i * k * [et(vx, vy), vz]' * [et(ux, uy), uz])
+	+ int1d(Th, srcl) (polx * vx + polz * vz)
+	+ on(bl, uy = 0);
+
+/* Mixed (scalar E||z and vector E||xy) function space. */
+fespace Vmh(Th, [RT1Ortho, P2]);
+fespace Vh(Th, [P1, P1, P1]);
+fespace Sh(Th, P2);
+
+/* Auxiliary scalar field. */
+Sh aux;
+
+/*
+ * Mixed polarization.
+ */
+
+/* Unknown field. */
+Vmh<complex> [Ex, Ey, Ez];
+
+/* Solve dynamic linear system. */
+{
+	matrix<complex> A = dynamicboth(Vmh, Vmh);
+	complex[int] b = dynamicboth(0, Vmh);
+	Ex[] = A^-1 * b;
+}
+
+/* Magnetic field. */
+Vh<complex> [Hx, Hy, Hz] =
+    [-1i / k * dy(Ez), 1i / k * dx(Ez), -1i / k * (dx(Ey) - dy(Ex))];
+
+/* Output dynamic results. */
+//plot(Ez, value = true, fill = true, wait = true);
+//plot(Hz, value = true, fill = true, wait = true);
+
+/* Find the amplitude of the waves. */
+aux = abs(Ez);
+real am = aux[].max;
+real step = am / 20;
+
+/* Visualize the wave. */
+//real[int] viso = -(am + step):step:(am + step);
+for (int i = 0; i < -nanim; i++) {
+	aux = real(Ez) * cos(2 * pi * i / nanim) +
+	    imag(Ez) * sin(2 * pi * i / nanim);
+//	plot(aux, value = true, fill = true, viso = viso, dim = 2);
+}
+
+/* Calculate transmittance (and reflectance) spectrum. */
+complex a1, a2, a3, factor, r, t;	// Complex amplitudes and factor.
+int order = 0, order2 = 0;		// Phase unfolding
+real phase, oldval = 0, oldval2 = 0;	// variables.
+
+string polname;
+
+for (polz = 0.0; polz < 1.5; polz += 1.0) {
+polx = 1.0 - polz;
+
+if (polx < 0.5)
+	polname = "v";
+else
+	polname = "h";
+
+string fname = "25_1p28_map_pol_" + polname + ".dat";
+ofstream ofile(fname);
+cout << fname << endl;
+
+ofile << "# sigma0 = " << sigma0 << ", gamma = " << gamma << endl;
+ofile << "# d = " << d << ", kcr = " << kcr << ", k = " << k << endl;
+ofile << "# polx = " << polx << ", polz = " << polz << endl;
+ofile << "# k\t|t_e|^2\targ(t_e)\t|t_m|^2\targ(t_m)" << endl;
+for (k = 0.002; k < 0.3; k += 0.002) {
+for (kcr = -0.4; kcr < 0.4; kcr += 0.005) {
+	sigma0 = 3.0 + (5.5 - 3.0) * abs(kcr) / 0.26;
+	gamma = 1.5 * 5 / sigma0;		// 1/Tau in cm^(-1)
+	tau = 1.0 / (2 * pi * gamma * 25e-4);	// c * tau / period.
+
+	/* Solve both polarizations. */
+	{
+		matrix<complex> A = dynamicboth(Vmh, Vmh);
+		complex[int] b = dynamicboth(0, Vmh);
+		Ex[] = A^-1 * b;
+	}
+
+	/* Decomposition into incident, reflected and transmitted waves. */
+	a1 = int1d(Th, m1) (polx * Ex + polz * Ez);
+	a2 = int1d(Th, m2) (polx * Ex + polz * Ez);
+	a3 = int1d(Th, m3) (polx * Ex + polz * Ez);
+	factor = exp(-1i * k * (y2 - y1));
+	r = exp(1i * k * (y1 + y2)) * (a1 - a2 * factor) / (a2 - a1 * factor);
+	t = 2i * exp(1i * k * (y1 - y3)) *
+	    sin(k * (y2 - y1)) * a3 / (a2 - a1 * factor);
+
+	/* Unfold phase. */
+	phase = arg(t);
+	if ((oldval > 0) && (phase < 0) && (abs(oldval - phase) > pi))
+		order++;
+	if ((oldval < 0) && (phase > 0) && (abs(oldval - phase) > pi))
+		order--;
+	oldval = phase;
+
+	ofile << kcr << "\t" << k << "\t" << abs(t)^2 << "\t" <<
+	    phase + 2 * pi * order << "\t";
+
+	/* Decomposition into incident, reflected and transmitted waves. */
+	a1 = int1d(Th, m1) (polx * Ex + polz * Ez);
+	a2 = int1d(Th, m2) (polx * Ex + polz * Ez);
+	a3 = int1d(Th, m3) (polz * Ex + polx * Ez);
+	factor = exp(-1i * k * (y2 - y1));
+	r = exp(1i * k * (y1 + y2)) * (a1 - a2 * factor) / (a2 - a1 * factor);
+	t = 2i * exp(1i * k * (y1 - y3)) *
+	    sin(k * (y2 - y1)) * a3 / (a2 - a1 * factor);
+
+	/* Unfold phase. */
+	phase = arg(t);
+	if ((oldval2 > 0) && (phase < 0) && (abs(oldval2 - phase) > pi))
+		order2++;
+	if ((oldval2 < 0) && (phase > 0) && (abs(oldval2 - phase) > pi))
+		order2--;
+	oldval2 = phase;
+
+	ofile << abs(t)^2 << "\t" <<
+	    phase + 2 * pi * order2 << endl;
+}
+ofile << endl;
+}
+}

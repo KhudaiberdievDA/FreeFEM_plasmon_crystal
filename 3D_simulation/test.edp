@@ -1,0 +1,81 @@
+load "msh3"
+load "medit"
+load "gmsh"
+load "Element_Mixte"
+load "Element_Mixte3d" 
+
+
+// Load the 3D mesh from gmsh
+lockOrientation = false;
+mesh3 Th = gmshload3("circle.msh");
+// plot(Th,wait=1);
+int[int] labs = labels(Th);
+lockOrientation = true;
+
+// Display mesh information
+cout << "=== Mesh Information ===" << endl;
+cout << "Number of tetrahedra: " << Th.nt << endl;
+cout << "Number of vertices: " << Th.nv << endl;
+cout << "Number of boundary elements: " << Th.nbe << endl;
+
+/* Labels and scale factor (should be synchronized with GMSH file). */
+int sIn = 1;
+int sOut = 2;
+int sSourse = 3;
+int sBack = 4;
+int sM1 = 5;
+int sM2 = 6;
+int sM3 = 7;
+int sBoundaryBottom = 8;
+int sBoundaryTop = 9;
+int sBoundaryLeft = 10;
+int sBoundaryRight = 11;
+int sCircle = 12;
+int sComplimentary = 13;
+int vDiel = 14;
+int vAir = 15;
+real scale = 1.0 / 1e3;
+
+
+// Define a simple finite element space
+fespace Vh(Th, P1, periodic =
+[[sBoundaryBottom, x, y], [sBoundaryTop, x, y], [sBoundaryLeft, y, z], [sBoundaryRight, y, z]]); //Periodic Scalar
+
+// fespace Vh3(Th, Edge13d, periodic =
+// [[sBoundaryBottom, x, y], [sBoundaryTop, x, y], [sBoundaryLeft, y, z], [sBoundaryRight, y, z]]); //Periodic Vector
+
+// Test function: simple Poisson problem
+Vh u, v;
+
+// Define a simple problem to verify the mesh works
+problem Poisson(u, v) =
+    int3d(Th)(dx(u)*dx(v) + dy(u)*dy(v) + dz(u)*dz(v))  // Laplacian
+    + int3d(Th)(0*v)                                      // Source term                                     
+    + on(sCircle, u=1)
+    + on(sBoundaryBottom, u=-1)
+    + on(sBoundaryLeft, u=-1)
+    ;
+
+// Solve
+cout << "\n=== Solving test problem ===" << endl;
+Poisson;
+
+
+// Display solution statistics
+cout << "\nSolution statistics:" << endl;
+cout << "Min value: " << u[].min << endl;
+cout << "Max value: " << u[].max << endl;
+
+// Save solution for visualization
+savemesh(Th, "mesh_test.mesh");
+medit("TestSolution", Th, u, wait=1);
+
+// Optional: Check region labels
+cout << "\n=== Checking regions ===" << endl;
+int[int] reglabels = labels(Th);
+cout << "Physical volume labels found: ";
+for(int i = 0; i < reglabels.n; i++)
+    cout << reglabels[i] << " ";
+cout << endl;
+
+cout << "\n=== Test completed successfully ===" << endl;

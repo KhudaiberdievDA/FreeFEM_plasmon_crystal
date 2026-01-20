@@ -1,0 +1,238 @@
+//  run with MPI:  ff-mpirun -np 4 script.edp
+
+load "msh3"
+load "medit"
+load "gmsh"
+load "Element_Mixte"
+load "PETSc"                        // PETSc plugin
+
+/* Parameters. */
+
+verbosity = 0;
+
+real mCyclotron = 0.47; // cyclotron mass in units of electron mass
+// real n = 5E11/sqrt(5.5); // concentration in cm^(-2)
+real n = 5E11; // concentration in cm^(-2)
+real tauS = 2E-11; // relaxation time in seconds
+real c = 2.99792458E10; // speed of light in cm/s
+real e = 4.80320425E-10; // electron charge in esu
+real pi = 3.141592653589793; // pi
+real massElectron = 9.10938356E-28; // electron mass in grams
+real massRelation = 1; // mx/my ratio
+
+real a = 25e-4;				// Stripes period [cm].
+complex dieleps = 1;           // Dielectric epsilon as complex
+// real sigma0 = 5;			// 2D conductivity 4 * pi * sigma / c.
+real sigma0 = 4*pi/c * e^2*n*tauS/mCyclotron/massElectron; // 2D conductivity 4 * pi / c * sigma .
+// real gamma = 1.5 * 5 / sigma0;		// 1/Tau in cm^(-1)
+// real tau = 1.0 / (2 * pi * gamma * a);	// c * tau / period.
+real tau = c*tauS/a;	// c * tau / period.
+// real k = 2 * pi * a * 2000 / 29.98;	// Wavevector times period.
+real k = 0.001;	// Wavevector times period.
+					// Period is set to 1.0.
+// real kcr1 = 2 * pi * a * (-12.7);	// Cyclotron resonance in 1 Tesla. Needs to be checked!
+real kcr1 = -1.655603E12 * sigma0 / n / tau;	// Cyclotron resonance in 1 Tesla. Needs to be checked!
+real kcr = kcr1 * 0;			// Cyclotron resonance wave vector.
+complex polx = 1.0, polz = 0.0;   // Incident polarization as complex
+
+/* Labels and scale factor (should be synchronized with GMSH file). */
+int sIn = 1;
+int sOut = 2;
+int sSourse = 3;
+int sBack = 4;
+int sM1 = 5;
+int sM2 = 6;
+int sM3 = 7;
+int sBoundaryBottom = 8;
+int sBoundaryTop = 9;
+int sBoundaryLeft = 10;
+int sBoundaryRight = 11;
+int sCircle = 12;
+int sComplimentary = 13;
+int vDiel = 14;
+int vAir = 15;
+real scale = 1.0 / 1e3;
+
+/* Conductivity tensor and tangential component of in-plane field. */
+macro stensor() [[sigmaxx*sqrt(massRelation), sigmaxy], [-sigmaxy, sigmaxx/sqrt(massRelation)]] //
+
+// Load the 3D mesh from gmsh
+lockOrientation = false;
+mesh3 Th = gmshload3("circle.msh");
+// plot(Th,wait=1);
+int[int] labs = labels(Th);
+lockOrientation = true;
+
+Th = movemesh(Th, [scale * x, scale * y, scale * z]);
+
+// Display mesh information
+cout << "=== Mesh Information ===" << endl;
+cout << "Number of tetrahedra: " << Th.nt << endl;
+cout << "Number of vertices: " << Th.nv << endl;
+cout << "Number of boundary elements: " << Th.nbe << endl;
+
+
+
+// Define Edge13d finite element space (H(curl) conforming)
+fespace Vh3 (Th, Edge03d, periodic =
+    [[sBoundaryBottom, x, y], [sBoundaryTop, x, y], 
+     [sBoundaryLeft, y, z], [sBoundaryRight, y, z]]);
+
+// Also define P1 space for potential problems
+fespace Vh(Th, P1, periodic =
+[[sBoundaryBottom, x, y], [sBoundaryTop, x, y], [sBoundaryLeft, y, z], [sBoundaryRight, y, z]]); //Periodic Scalar
+
+
+/* Get the positions of planes m1, m2, m3 and the back of the sample. */
+real y1 = int2d(Th, sM1) (y)   / int2d(Th, sM1) (1);
+real y2 = int2d(Th, sM2) (y)   / int2d(Th, sM2) (1);
+real y3 = int2d(Th, sM3) (y)   / int2d(Th, sM3) (1);
+real d  = int2d(Th, sBack) (y) / int2d(Th, sBack) (1);
+cout << "m1 = " << y1 << ", m2 = " << y2 << ", m3 = " << y3 <<    ", d = " << d << endl;
+
+/* Dielectric permittivity. */
+func epsilon = 1 * (Th(x, y, z).region == vAir) +
+    dieleps * (Th(x, y, z).region == vDiel);
+
+/* Drude conductivity. */
+func sigmaxx = sigma0  / ((1 - 1i * k * tau)^2 + (kcr * tau)^2) *
+    (1 - 1i * k * tau);
+func sigmaxy = sigma0 / ((1 - 1i * k * tau)^2 + (kcr * tau)^2) * kcr * tau;
+
+cout << "\n=== Test 1: Vector Helmholtz Problem ===" << endl;
+Vh3<complex> [Ex, Ey, Ez], [vx, vy, vz];
+
+// Macros for curl operator
+macro Curl(ux, uy, uz) [dy(uz)-dz(uy), dz(ux)-dx(uz), dx(uy)-dy(ux)] //
+
+varf vHelmholtz([Ex,Ey,Ez], [vx,vy,vz]) =
+    int3d(Th)(
+        Curl(Ex,Ey,Ez)' * Curl(vx,vy,vz)  // curl-curl term
+        - k^2 * epsilon * [Ex,Ey,Ez]' * [vx,vy,vz]  // -k^2 term
+    )
+    -int2d(Th, sIn) (  // Incident wave boundary condition
+        1i * k * [Ex,Ez]' * [vx, vz]
+    )
+    -int2d(Th, sOut) (  // Absorbing boundary condition
+        1i * k * [Ex,Ez]' * [vx, vz]
+    )
+    + int2d(Th, sSourse) (polx * vx + polz * vz)
+    - int2d(Th, sCircle) (1i * k * [vx, vz]' * stensor * [Ex, Ez])
+    ;
+
+matrix<complex> A = vHelmholtz(Vh3, Vh3);
+complex[int] b = vHelmholtz(0,Vh3); // Pass a zero vector for the trial function
+
+// Solve the system
+set(A, solver="MUMPS");
+Ex[] = A^-1 * b; 
+
+// Compute magnitude of electric field
+Vh<real> ExMag = real(Ex);
+Vh<real> EyMag = real(Ey);
+Vh<real> EzMag = real(Ez);
+Vh<real> EMag = sqrt(ExMag^2 + EyMag^2 + EzMag^2);
+
+int nx = 100, nz = 100;
+real x0 = -0.5, x1 = 0.5, z0 = -0.5, z1 = 0.5;
+mesh Th2 = square(nx, nz, [x0 + (x1 - x0) * x, z0 + (z1 - z0) * y]);
+fespace V2(Th2, [P1,P1,P1]);  // 2D scalar field
+V2 [ExSlice, EySlice, EzSlice] = [ExMag(x,0,y), EyMag(x,0,y), EzMag(x,0,y)];
+plot(Th2, [ExSlice,EzSlice], fill=true, value=true, cmm="ExEz magnitude slice at y=0", wait=0, ps = "ExzSlice_k=" + k + ".eps");
+plot(Th2, ExSlice          , fill=true, value=true, cmm="Ex   magnitude slice at y=0", wait=0, ps =  "ExSlice_k=" + k + ".eps");
+plot(Th2, EySlice          , fill=true, value=true, cmm="Ey   magnitude slice at y=0", wait=0, ps =  "EySlice_k=" + k + ".eps");
+plot(Th2, EzSlice          , fill=true, value=true, cmm="Ez   magnitude slice at y=0", wait=0, ps =  "EzSlice_k=" + k + ".eps");
+
+
+// Visualize the results
+// medit("Ex magnitude", Th, ExMag, wait=1);
+// medit("Ey magnitude", Th, EyMag, wait=1);
+// medit("Ez magnitude", Th, EzMag, wait=1);
+// medit("Total E magnitude", Th, EMag, wait=1);
+
+cout << "Max |Ex|: " << ExMag[].max << endl;
+cout << "Max |Ey|: " << EyMag[].max << endl;
+cout << "Max |Ez|: " << EzMag[].max << endl;
+cout << "Max |E|: " << EMag[].max << endl;
+
+
+// medit("TestSolution", Th, [Ex, Ey, Ez], wait=1);
+// medit("TestSolution", Th, Ey, wait=1);
+// medit("TestSolution", Th, Ez, wait=1);
+// medit("TestSolution", Th, AbsS, wait=1);
+
+
+cout << "\n=== Test completed successfully ===" << endl;
+
+
+
+/* Calculate transmittance (and reflectance) spectrum. */
+complex a1, a2, a3, factor, r, t;	// Complex amplitudes and factor.
+int order = 0, order2 = 0;		// Phase unfolding
+real phase, oldval = 0, oldval2 = 0;	// variables.
+
+cout << "# a = " << a * 1e4 << " um" << endl;
+cout << "# sigma0 = " << sigma0  << endl;
+// cout << "# sigma0 = " << sigma0 << ", gamma = " << gamma << " cm^-1" << endl;
+cout << "# n = " << 1.655603e12 * sigma0 / (abs(kcr1) * tau) << 
+    " 1/cm^2, mu = " << abs(kcr1) * tau << " m^2/Vs" << endl;
+cout << "# epsilon = " << dieleps << ", kcr1 = " << kcr1 << " 1/T" << endl;
+cout << "# d = " << d << ", kcr = " << kcr << ", k = " << k << endl;
+cout << "# polx = " << polx << ", polz = " << polz << endl;
+cout << "# k\t|t_e|^2\targ(t_e)\t|t_m|^2\targ(t_m)" << endl;
+
+
+for (k = 0.001; k < 1.0; k += 0.001) {
+	/* Solve both polarizations. */
+	{
+		matrix<complex> A = vHelmholtz(Vh3, Vh3);
+		complex[int] b = vHelmholtz(0, Vh3);
+		// set(A, solver="MUMPS");
+		// set(A,solver=GMRES, init=1, precon="ilu");
+        // set(A, sparams = "-ksp_type gmres -ksp_rtol 1e-8 -pc_type ilu -ksp_initial_guess_nonzero");
+        // set(A, sparams = "-ksp_type cg -ksp_rtol 1e-8  -pc_type icc  -ksp_initial_guess_nonzero");
+        set(A, sparams = "-ksp_type cg -ksp_rtol 1e-8   -ksp_initial_guess_nonzero");
+        Ex[] = A^-1 * b; 
+	}
+
+	/* Decomposition into incident, reflected and transmitted waves. */
+	a1 = int2d(Th, sM1) (polx * Ex + polz * Ez);
+	a2 = int2d(Th, sM2) (polx * Ex + polz * Ez);
+	a3 = int2d(Th, sM3) (polx * Ex + polz * Ez);
+	factor = exp(-1i * k * (y2 - y1));
+	r = exp(1i * k * (y1 + y2)) * (a1 - a2 * factor) / (a2 - a1 * factor);
+	t = 2i * exp(1i * k * (y1 - y3)) *
+	    sin(k * (y2 - y1)) * a3 / (a2 - a1 * factor);
+
+	/* Unfold phase. */
+	phase = arg(t);
+	if ((oldval > 0) && (phase < 0) && (abs(oldval - phase) > pi))
+		order++;
+	if ((oldval < 0) && (phase > 0) && (abs(oldval - phase) > pi))
+		order--;
+	oldval = phase;
+
+	cout << k << "\t" << abs(t)^2 << "\t" <<
+	    phase + 2 * pi * order << "\t";
+
+	/* Decomposition into incident, reflected and transmitted waves. */
+	a1 = int2d(Th, sM1) (polx * Ex + polz * Ez);
+	a2 = int2d(Th, sM2) (polx * Ex + polz * Ez);
+	a3 = int2d(Th, sM3) (polz * Ex + polx * Ez);
+	factor = exp(-1i * k * (y2 - y1));
+	r = exp(1i * k * (y1 + y2)) * (a1 - a2 * factor) / (a2 - a1 * factor);
+	t = 2i * exp(1i * k * (y1 - y3)) *
+	    sin(k * (y2 - y1)) * a3 / (a2 - a1 * factor);
+
+	/* Unfold phase. */
+	phase = arg(t);
+	if ((oldval2 > 0) && (phase < 0) && (abs(oldval2 - phase) > pi))
+		order2++;
+	if ((oldval2 < 0) && (phase > 0) && (abs(oldval2 - phase) > pi))
+		order2--;
+	oldval2 = phase;
+
+	cout << abs(t)^2 << "\t" <<
+	    phase + 2 * pi * order2 << endl;
+    
+}

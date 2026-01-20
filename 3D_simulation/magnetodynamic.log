@@ -1,0 +1,134 @@
+You chose the file "D:\Solid_State_Specroscopy_Group\FreeFEM_plasmon_crystal\FreeFEM_plasmon_crystal\3D_simulation\magneðG¢Îótodynamic.edp"
+-- FreeFem++ v4.15 (Wed Dec 11 16:48:56 CET 2024 - git v4.15-7-gb1e524c8c)
+   file : D:\Solid_State_Specroscopy_Group\FreeFEM_plasmon_crystal\FreeFEM_plasmon_crystal\3D_simulation\magnetodynamic.ðG¢Îóedp
+ Load: lg_fem lg_mesh lg_mesh3 eigenvalue
+    1 : // load "gmsh"
+    2 : // load "Element_Mixte"
+    3 : // load    "Element_Mixte3d"
+    4 : // load    "msh3"
+    5 :
+    6 :
+    7 :
+    8 : // /* Parameters. */
+    9 :
+   10 : // verbosity = 0;
+   11 :
+   12 : // real a = 25e-4;                              // Stripes period [cm].
+   13 : // complex dieleps = 12;                        // Dielectric epsilon.
+   14 : // real sigma0 = 5;                     // 2D conductivity 4 * pi * sigma / c.
+   15 : // real gamma = 1.5 * 5 / sigma0;               // 1/Tau in cm^(-1)
+   16 : // real tau = 1.0 / (2 * pi * gamma * a);       // c * tau / period.
+   17 : // real k = 2 * pi * a * 295 / 29.98;   // Wavevector times period.
+   18 : //                                      // Period is set to 1.0.
+   19 : // real kcr1 = 2 * pi * a * (-12.7);    // Cyclotron resonance in 1 Tesla.
+   20 : // real kcr = kcr1 * 0;                 // Cyclotron resonance wave vector.
+   21 : // complex polx = 1.0i, polz = 1.0;     // Incident polarization.
+   22 : // int nanim = 40;                              // Number of animation frames.
+   23 :
+   24 : // /* Labels and scale factor (should be synchronized with GMSH file). */
+   25 : // int sIn = 1;
+   26 : // int sOut = 2;
+   27 : // int sSourse = 3;
+   28 : // int sBack = 4;
+   29 : // int sM1 = 5;
+   30 : // int sM2 = 6;
+   31 : // int sM3 = 7;
+   32 : // int sBoundaryBottom = 8;
+   33 : // int sBoundaryTop = 9;
+   34 : // int sBoundaryLeft = 10;
+   35 : // int sBoundaryRight = 11;
+   36 : // int sCircle = 12;
+   37 : // int sComplimentary = 13;
+   38 : // int vDiel = 14;
+   39 : // int vAir = 15;
+   40 : // real scale = 1.0 / 1e3;
+   41 :
+   42 :
+   43 : // /* Conductivity tensor and tangential component of in-plane field. */
+   44 : // macro stensor() [[sigmaxx, sigmaxy], [-sigmaxy, sigmaxx]] //
+   45 : // macro et(ux, uy) (N.y * ux - N.x * uy) //
+   46 :
+   47 : // // Load the 3D mesh from gmsh
+   48 : // lockOrientation = false;
+   49 : // mesh3 Th = gmshload3("circle.msh");
+   50 : // // plot(Th,wait=1);
+   51 : // int[int] labs = labels(Th);
+   52 : // lockOrientation = true;
+   53 : // Th = movemesh(Th, [scale * x, scale * y, scale * z]);
+   54 :
+   55 : // /* Check the labels. */
+   56 : // cout << "Labels: " << labels(Th) << endl;
+   57 : // cout << "Area = " << Th.measure << endl;
+   58 :
+   59 : // /* Get the positions of planes m1, m2, m3 and the back of the sample. */
+   60 : // real y1 = int2d(Th, sM1) (y) / int2d(Th, sM1) (1);
+   61 : // real y2 = int2d(Th, sM2) (y) / int2d(Th, sM2) (1);
+   62 : // real y3 = int2d(Th, sM3) (y) / int2d(Th, sM3) (1);
+   63 : // real d = int2d(Th, sBack) (y) / int2d(Th, sBack) (1);
+   64 : // cout << "m1 = " << y1 << ", m2 = " << y2 << ", m3 = " << y3 << ", d = " << d << endl;
+   65 :
+   66 : // /* Dielectric permittivity. */
+   67 : // func epsilon = 1 * (Th(x, y, z).region == vAir) +
+   68 : //     dieleps * (Th(x, y, z).region == vDiel);
+   69 :
+   70 : // /* Drude conductivity. */
+   71 : // func sigmaxx = sigma0  / ((1 - 1i * k * tau)^2 + (kcr * tau)^2) *
+   72 : //     (1 - 1i * k * tau);
+   73 : // func sigmaxy = sigma0 / ((1 - 1i * k * tau)^2 + (kcr * tau)^2) * kcr * tau;
+   74 :
+   75 : // /* Electrodynamic problem, mixed polarizations. */
+   76 : // varf dynamicboth([ux, uy, uz], [vx, vy, vz])
+   77 : //      = int3d(Th) ([dx(vz), dy(vz)]' * [dx(uz), dy(uz)] +
+   78 : //          (dx(vy) - dy(vx)) * (dx(uy) - dy(ux)) -
+   79 : //          epsilon * k^2 * [vx, vy, vz]' * [ux, uy, uz])
+   80 : //      - int2d(Th, st) (1i * k *
+   81 : //          [et(vx, vy), vz]' * stensor * [et(ux, uy), uz])
+   82 : //      - int2d(Th, inl) (1i * k * [et(vx, vy), vz]' * [et(ux, uy), uz])
+   83 : //      - int2d(Th, outl) (1i * k * [et(vx, vy), vz]' * [et(ux, uy), uz])
+   84 : //      + int2d(Th, srcl) (polx * vx + polz * vz)
+   85 : //      + on(bl, uy = 0);
+   86 :
+   87 : // /* Mixed (scalar E||z and vector E||xy) function space. */
+   88 : // fespace Vmh(Th, [RT1Ortho, P2]);
+   89 : // fespace Vh(Th, [P1, P1, P1]);
+   90 : // fespace Sh(Th, P2);
+   91 :
+   92 : // /* Auxiliary scalar field. */
+   93 : // Sh aux;
+   94 :
+   95 : // /*
+   96 : //  * Mixed polarization.
+   97 : //  */
+   98 :
+   99 : // /* Unknown field. */
+  100 : // Vmh<complex> [Ex, Ey, Ez];
+  101 :
+  102 : // /* Solve dynamic linear system. */
+  103 : // {
+  104 : //      matrix<complex> A = dynamicboth(Vmh, Vmh);
+  105 : //      complex[int] b = dynamicboth(0, Vmh);
+  106 : //      Ex[] = A^-1 * b;
+  107 : // }
+  108 :
+  109 : // /* Magnetic field. */
+  110 : // Vh<complex> [Hx, Hy, Hz] =
+  111 : //     [-1i / k * dy(Ez), 1i / k * dx(Ez), -1i / k * (dx(Ey) - dy(Ex))];
+  112 :
+  113 : // /* Output dynamic results. */
+  114 : // plot(Ez, value = true, fill = true, wait = true);
+  115 : // plot(Hz, value = true, fill = true, wait = true);
+  116 :
+  117 : // /* Find the amplitude of the waves. */
+  118 : // aux = abs(Ez);
+  119 : // real am = aux[].max;
+  120 : // real step = am / 20;
+  121 :
+  122 : // /* Visualize the wave. */
+  123 : // for (int i = 0; i < -nanim; i++) {
+  124 :   current line = 1
+Assertion fail : (count++<100)
+        line :264, in file lex.cpp
+error Assertion fail : (count++<100)
+        line :264, in file lex.cpp
+ code = 6 mpirank: 0
+ try getConsole D:\Solid_State_Specroscopy_Group\FreeFEM_plasmon_crystal\FreeFEM_plasmon_crystal\3D_simulation\magnetodyðG¢Îónamic.edp
