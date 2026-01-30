@@ -1,7 +1,7 @@
 /* Element size is fully specified by a mesh size field. */
-//Mesh.MeshSizeFromPoints = 0;
-//Mesh.MeshSizeFromCurvature = 0;
-//Mesh.MeshSizeExtendFromBoundary = 0;
+Mesh.MeshSizeFromPoints = 0;
+Mesh.MeshSizeFromCurvature = 0;
+Mesh.MeshSizeExtendFromBoundary = 0;
 
 Mesh.SaveAll = 0;
 
@@ -18,7 +18,7 @@ source = m1 - 0.5;			// Radiation source plane.
 inlen = source - 0.5;			// Length of incident side.
 outlen = m3 + 0.5;			// Length of outgoing side.
 h_min = 1e-3;				// Minimal element size and distance.
-h_max = 0.1;				// Maximal element size.
+h_max = 0.08;				// Maximal element size.
 l_max = 0.05;				// Distance to maximal size.
 
 /* Mesh scaling factor to avoid triangles with area < 1e-8. */
@@ -174,7 +174,7 @@ Periodic Surface {1012} = {1001} Translate {1,0,0};
 
 Curve Loop(2001) = {201,202,203,204};
 Plane Surface(2001) = {2001}; /* Circle surface */
-Point{0} In Surface {2001};
+// Point{0} In Surface {2001};
 
 Curve Loop(1020) = {20,1012,-120,-1005}; /* Surface without 2DES */
 Plane Surface(1020) = {1020, -2001}; /* Subtract circle surface */
@@ -251,8 +251,9 @@ Volume(3) = {3};
 
 /* Mesh size field. */
 Field[1] = Distance;
-/*Field[1].NodesList = {201,202,203,204};*/
+Field[1].NodesList = {201,202,203,204};
 Field[1].EdgesList = {201,202,203,204};
+Field[1].Sampling = 500;
 
 Field[2] = Threshold;
 Field[2].IField = 1;
@@ -260,8 +261,6 @@ Field[2].DistMin = h_min;
 Field[2].DistMax = l_max;
 Field[2].LcMin = h_min;
 Field[2].LcMax = h_max;
-
-//Field[2].NodesList = {200};
 
 Background Field = 2;
 
