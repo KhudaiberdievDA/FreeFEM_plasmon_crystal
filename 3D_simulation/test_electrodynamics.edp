@@ -8,29 +8,33 @@ load "PETSc"                        // PETSc plugin
 load "UMFPACK64"
 
 
-ofstream log("3D_simulation/output.log");
+ofstream log("3D_simulation/output_massrel4p0.log");
 /* Parameters. */
 
 verbosity = 0;
 
 // real n = 5E11/sqrt(5.5); // concentration in cm^(-2)
-real n = 5E11; // concentration in cm^(-2)
+// real n = 5E11; // concentration in cm^(-2)
+real n = 3.7E11; // concentration in cm^(-2)
 real tauS = 2E-11; // relaxation time in seconds
 real c = 2.99792458E10; // speed of light in cm/s
 real e = 4.80320425E-10; // electron charge in esu
 real pi = 3.141592653589793; // pi
 real massElectron = 9.10938356E-28; // electron mass in grams
 real mCyclotron = 0.47; // cyclotron mass in units of electron mass
-real massRelation = 5.5; // mx/my ratio
+real massRelation = 3.0; // mx/my ratio
 
 real a = 25e-4;				// Stripes period [cm].
+real rel = 1.0/a;
 complex dieleps = 1;           // Dielectric epsilon as complex
 real sigma0 =  4*pi/c * e^2*n*tauS/mCyclotron/massElectron; // 2D conductivity 4 * pi / c * sigma .
 // real gamma = 1.5 * 5 / sigma0;		// 1/Tau in cm^(-1)
 // real tau = 1.0 / (2 * pi * gamma * a);	// c * tau / period.
 real tau = c*tauS/a;	// c * tau / period.
 // real k = 2 * pi * a * 2000 / 29.98;	// Wavevector times period.
-real k = 0.001;	// Wavevector times period.
+// real k = 0.001;	// Wavevector times period.
+// real k = 0.1965;	// Wavevector times period.
+real k = 0.251;	// Wavevector times period.
 func f =  k * c / (2 * pi * a) * 1E-9;	// Frequency in GHz.
 					// Period is set to 1.0.
 // real kcr1 = 2 * pi * a * (-12.7);	// Cyclotron resonance in 1 Tesla. Needs to be checked!
@@ -111,6 +115,7 @@ Vh3<complex> [Ex, Ey, Ez], [vx, vy, vz];
 
 // Macros for curl operator
 macro Curl(ux, uy, uz) [dy(uz)-dz(uy), dz(ux)-dx(uz), dx(uy)-dy(ux)] //
+// macro CrossProduct([u1, u2, u3], [v1, v2, v3]) [u2*v3 - u3*v2, u3*v1 - u1*v3, u1*v2 - u2*v1] //
 
 varf A0Varf([Ex,Ey,Ez], [vx,vy,vz]) =
     int3d(Th)(Curl(Ex,Ey,Ez)' * Curl(vx,vy,vz));
@@ -118,6 +123,14 @@ varf A0Varf([Ex,Ey,Ez], [vx,vy,vz]) =
 varf A1Varf([Ex,Ey,Ez], [vx,vy,vz]) = 
     - int2d(Th, sIn)  (1i * [Ex,Ez]' * [vx, vz])  
     - int2d(Th, sOut) (1i * [Ex,Ez]' * [vx, vz]);  
+
+// varf A1Varf([Ex,Ey,Ez], [vx,vy,vz]) = 
+//      int2d(Th, sIn)  (vx*Curl(Ex,Ey,Ez)[2] - vz*Curl(Ex,Ey,Ez)[0])  
+//    - int2d(Th, sOut) (vx*Curl(Ex,Ey,Ez)[2] - vz*Curl(Ex,Ey,Ez)[0]);
+
+// varf A1Varf([Ex,Ey,Ez], [vx,vy,vz]) = 
+//      int2d(Th, sIn)  (vx*(dx(Ey)-dy(Ex)) - vz*(dy(Ex)-dz(Ey)))  
+//    - int2d(Th, sOut) (vx*(dx(Ey)-dy(Ex)) - vz*(dy(Ex)-dz(Ey)));
 
 varf VxExCircleVarf([Ex,Ey,Ez], [vx,vy,vz]) = int2d(Th, sCircle) (vx*Ex);
 varf VxEzCircleVarf([Ex,Ey,Ez], [vx,vy,vz]) = int2d(Th, sCircle) (vx*Ez);
@@ -142,6 +155,15 @@ matrix<complex> VzExCircle = VzExCircleVarf(Vh3, Vh3);
 matrix<complex> VzEzCircle = VzEzCircleVarf(Vh3, Vh3); 
 
 
+// matrix<complex> A = A0 + A1*k + A2*k^2 
+//      + VxExCircle * sxx + VxEzCircle * sxy 
+//      + VzExCircle * syx + VzEzCircle * syy;
+
+// set(A, sparams = "-ksp_type cg -ksp_rtol 1e-6 -ksp_initial_guess_nonzero");
+// //Solving for linear Ex polarization
+// polx = 1.0; polz = 0.0;
+// complex[int] b = bPolx * polx + bPolz * polz;
+// Ex[] = A^-1 * b;
 
 
 // // Compute magnitude of electric field
@@ -150,15 +172,15 @@ matrix<complex> VzEzCircle = VzEzCircleVarf(Vh3, Vh3);
 // Vh<real> EzMag = real(Ez);
 // Vh<real> EMag = sqrt(ExMag^2 + EyMag^2 + EzMag^2);
 
-// int nx = 100, nz = 100;
+// int nx = 1000, nz = 1000;
 // real x0 = -0.5, x1 = 0.5, z0 = -0.5, z1 = 0.5;
 // mesh Th2 = square(nx, nz, [x0 + (x1 - x0) * x, z0 + (z1 - z0) * y]);
 // fespace V2(Th2, [P1,P1,P1]);  // 2D scalar field
 // V2 [ExSlice, EySlice, EzSlice] = [ExMag(x,0,y), EyMag(x,0,y), EzMag(x,0,y)];
-// plot(Th2, [ExSlice,EzSlice], fill=true, value=true, cmm="ExEz magnitude slice at y=0", wait=0, ps = "ExzSlice_k=" + k + ".eps");
-// plot(Th2, ExSlice          , fill=true, value=true, cmm="Ex   magnitude slice at y=0", wait=0, ps =  "ExSlice_k=" + k + ".eps");
-// plot(Th2, EySlice          , fill=true, value=true, cmm="Ey   magnitude slice at y=0", wait=0, ps =  "EySlice_k=" + k + ".eps");
-// plot(Th2, EzSlice          , fill=true, value=true, cmm="Ez   magnitude slice at y=0", wait=0, ps =  "EzSlice_k=" + k + ".eps");
+// plot(Th2, [ExSlice,EzSlice], fill=true, value=true, cmm="ExEz magnitude slice at y=0", wait=1, ps = "ExzSlice_k=" + k + ".eps");
+// plot(Th2, ExSlice          , fill=true, value=true, cmm="Ex   magnitude slice at y=0", wait=1, ps =  "ExSlice_k=" + k + ".eps");
+// plot(Th2, EySlice          , fill=true, value=true, cmm="Ey   magnitude slice at y=0", wait=1, ps =  "EySlice_k=" + k + ".eps");
+// plot(Th2, EzSlice          , fill=true, value=true, cmm="Ez   magnitude slice at y=0", wait=1, ps =  "EzSlice_k=" + k + ".eps");
 
 
 // Visualize the results
@@ -176,7 +198,7 @@ matrix<complex> VzEzCircle = VzEzCircleVarf(Vh3, Vh3);
 // medit("TestSolution", Th, [Ex, Ey, Ez], wait=1);
 // medit("TestSolution", Th, Ey, wait=1);
 // medit("TestSolution", Th, Ez, wait=1);
-// medit("TestSolution", Th, AbsS, wait=1);To
+// medit("TestSolution", Th, AbsS, wait=1);
 
 
 
@@ -228,9 +250,11 @@ log << "time_(s)" << "\t"
 
 log.flush;
 
+// for (k = 0.01; k < 10.0; k += 0.0005) {
 for (k = 0.001; k < 10.0; k += 0.0005) {
 // for (k = 0.08; k < 1.0; k += 0.01) {
     // Assemble system matrix
+    // matrix<complex> A = A0 + A2*k^2; 
     matrix<complex> A = A0 + A1*k + A2*k^2 
          + VxExCircle * sxx + VxEzCircle * sxy 
          + VzExCircle * syx + VzEzCircle * syy;

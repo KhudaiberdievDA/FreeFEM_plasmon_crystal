@@ -6,9 +6,11 @@ load "gmsh"
 load "Element_Mixte"
 load "PETSc"                        // PETSc plugin
 load "UMFPACK64"
+// include "ffmatlib.idp"
 
 
-ofstream log("3D_simulation/output.log");
+
+ofstream log("3D_simulation/eigenvalues.log");
 /* Parameters. */
 
 verbosity = 0;
@@ -24,7 +26,7 @@ real mCyclotron = 0.47; // cyclotron mass in units of electron mass
 real massRelation = 5.5; // mx/my ratio
 
 real a = 25e-4;				// Stripes period [cm].
-complex dieleps = 1;           // Dielectric epsilon as complex
+real dieleps = 1;           // Dielectric epsilon as complex
 real sigma0 =  4*pi/c * e^2*n*tauS/mCyclotron/massElectron; // 2D conductivity 4 * pi / c * sigma .
 // real gamma = 1.5 * 5 / sigma0;		// 1/Tau in cm^(-1)
 // real tau = 1.0 / (2 * pi * gamma * a);	// c * tau / period.
@@ -56,11 +58,9 @@ int vDiel = 14;
 int vAir = 15;
 real scale = 1.0 / 1e3;
 
-/* Conductivity tensor and tangential component of in-plane field. */
-macro stensor() [[sigmaxx*sqrt(massRelation), sigmaxy], [-sigmaxy, sigmaxx/sqrt(massRelation)]] //
-
 // Load the 3D mesh from gmsh
 lockOrientation = false;
+// mesh3 Th = gmshload3("3D_simulation/circle_dense.msh");
 mesh3 Th = gmshload3("3D_simulation/circle_dense.msh");
 // plot(Th,wait=1);
 int[int] labs = labels(Th);
@@ -69,17 +69,17 @@ lockOrientation = true;
 Th = movemesh(Th, [scale * x, scale * y, scale * z]);
 
 // Display mesh information
-log << "=== Mesh Information ===" << endl;
-log << "Number of tetrahedra: " << Th.nt << endl;
-log << "Number of vertices: " << Th.nv << endl;
-log << "Number of boundary elements: " << Th.nbe << endl;
+cout << "=== Mesh Information ===" << endl;
+cout << "Number of tetrahedra: " << Th.nt << endl;
+cout << "Number of vertices: " << Th.nv << endl;
+cout << "Number of boundary elements: " << Th.nbe << endl;
 
 
 
 // Define Edge13d finite element space (H(curl) conforming)
-fespace Vh3 (Th, Edge03d, periodic =
-    [[sBoundaryBottom, x, y], [sBoundaryTop, x, y], 
-     [sBoundaryLeft, y, z], [sBoundaryRight, y, z]]);
+// fespace Vh3 (Th, Edge03d, periodic =
+//     [[sBoundaryBottom, x, y], [sBoundaryTop, x, y], 
+//      [sBoundaryLeft, y, z], [sBoundaryRight, y, z]]);
 
 // Also define P1 space for potential problems
 fespace Vh(Th, P1, periodic =
@@ -94,200 +94,54 @@ real y3 = int2d(Th, sM3) (y)   / int2d(Th, sM3) (1);
 real d  = int2d(Th, sBack) (y) / int2d(Th, sBack) (1);
 log << "m1 = " << y1 << ", m2 = " << y2 << ", m3 = " << y3 <<    ", d = " << d << endl;
 
+// Solve the generalized eigenvalue problem
+int nev = 26; // number of eigenvalues to compute
+real sigma = 3; // shift for the shift-invert method
+
+
 /* Dielectric permittivity. */
 func epsilon = 1 * (Th(x, y, z).region == vAir) +
     dieleps * (Th(x, y, z).region == vDiel);
 
-/* Drude conductivity. */
-func sigmaxx = sigma0  / ((1 - 1i * k * tau)^2 + (kcr * tau)^2) * (1 - 1i * k * tau);
-func sigmaxy = sigma0 / ((1 - 1i * k * tau)^2 + (kcr * tau)^2) * kcr * tau;
-func sxx =  -1i*k*sigmaxx*sqrt(massRelation);
-func sxy =  -1i*k*sigmaxy;
-func syx =   1i*k*sigmaxy;
-func syy =  -1i*k*sigmaxx/sqrt(massRelation);
+macro anisoTensor [[sqrt(massRelation),0],[0,1/sqrt(massRelation)]] //
+
+Vh u, v;
+
+/*Macros for 2D Nabla operator*/
+macro Nabla2D(w) [dx(w), dz(w)] //
+
+/*Macros for 3D Nabla operator*/
+macro Nabla3D(w) [dx(w), dy(w), dz(w)] //
+
+// varf BVarf(u, v) =
+//     int2d(Th,sCircle)( Nabla2D(u)' * anisoTensor * Nabla2D(v) );
+
+// varf AVarf(u, v) =
+//     int3d(Th)( epsilon * Nabla3D(u)' * Nabla3D(v)) - int2d(Th,sCircle)(sigma * Nabla2D(u)' * anisoTensor * Nabla2D(v));
+
+varf AVarf(u, v) =
+    int2d(Th,sCircle)( Nabla2D(u)' * anisoTensor * Nabla2D(v))
+    - int3d(Th)(sigma * epsilon * Nabla3D(u)' * Nabla3D(v));
+
+varf BVarf(u, v) =
+    int3d(Th)( epsilon * Nabla3D(u)' * Nabla3D(v));
 
 
-Vh3<complex> [Ex, Ey, Ez], [vx, vy, vz];
+matrix OP = AVarf(Vh, Vh, solver=Crout, factorize=1);
+matrix B = BVarf(Vh, Vh, solver=CG, eps=1e-20);
 
-// Macros for curl operator
-macro Curl(ux, uy, uz) [dy(uz)-dz(uy), dz(ux)-dx(uz), dx(uy)-dy(ux)] //
+cout << "Assembled matrices." << endl;
 
-varf A0Varf([Ex,Ey,Ez], [vx,vy,vz]) =
-    int3d(Th)(Curl(Ex,Ey,Ez)' * Curl(vx,vy,vz));
-
-varf A1Varf([Ex,Ey,Ez], [vx,vy,vz]) = 
-    - int2d(Th, sIn)  (1i * [Ex,Ez]' * [vx, vz])  
-    - int2d(Th, sOut) (1i * [Ex,Ez]' * [vx, vz]);  
-
-varf VxExCircleVarf([Ex,Ey,Ez], [vx,vy,vz]) = int2d(Th, sCircle) (vx*Ex);
-varf VxEzCircleVarf([Ex,Ey,Ez], [vx,vy,vz]) = int2d(Th, sCircle) (vx*Ez);
-varf VzExCircleVarf([Ex,Ey,Ez], [vx,vy,vz]) = int2d(Th, sCircle) (vz*Ex);
-varf VzEzCircleVarf([Ex,Ey,Ez], [vx,vy,vz]) = int2d(Th, sCircle) (vz*Ez);
-
-varf A2Varf([Ex,Ey,Ez], [vx,vy,vz]) =
-    int3d(Th)( - epsilon * [Ex,Ey,Ez]' * [vx,vy,vz]);
-
-varf bPolxVarf([Ex,Ey,Ez], [vx,vy,vz]) = int2d(Th, sSource) (vx);
-varf bPolzVarf([Ex,Ey,Ez], [vx,vy,vz]) = int2d(Th, sSource) (vz);
+real[int] ev(nev);
+Vh[int]   eV(nev);
 
 
-matrix<complex> A0 = A0Varf(Vh3, Vh3);
-matrix<complex> A1 = A1Varf(Vh3, Vh3);
-matrix<complex> A2 = A2Varf(Vh3, Vh3);
-complex[int] bPolx = bPolxVarf(0, Vh3);
-complex[int] bPolz = bPolzVarf(0, Vh3);
-matrix<complex> VxExCircle = VxExCircleVarf(Vh3, Vh3);
-matrix<complex> VxEzCircle = VxEzCircleVarf(Vh3, Vh3);
-matrix<complex> VzExCircle = VzExCircleVarf(Vh3, Vh3);
-matrix<complex> VzEzCircle = VzEzCircleVarf(Vh3, Vh3); 
+int m = EigenValue(OP, B, sym=true, sigma=sigma, value=ev, vector=eV, tol=1e-10, maxit=0, ncv=0);
+// int m = EigenValue(OP, B, mode = 2, sym=true, value=ev, vector=eV, tol=1e-10, maxit=0, ncv=0);
 
-
-
-
-// // Compute magnitude of electric field
-// Vh<real> ExMag = real(Ex);
-// Vh<real> EyMag = real(Ey);
-// Vh<real> EzMag = real(Ez);
-// Vh<real> EMag = sqrt(ExMag^2 + EyMag^2 + EzMag^2);
-
-// int nx = 100, nz = 100;
-// real x0 = -0.5, x1 = 0.5, z0 = -0.5, z1 = 0.5;
-// mesh Th2 = square(nx, nz, [x0 + (x1 - x0) * x, z0 + (z1 - z0) * y]);
-// fespace V2(Th2, [P1,P1,P1]);  // 2D scalar field
-// V2 [ExSlice, EySlice, EzSlice] = [ExMag(x,0,y), EyMag(x,0,y), EzMag(x,0,y)];
-// plot(Th2, [ExSlice,EzSlice], fill=true, value=true, cmm="ExEz magnitude slice at y=0", wait=0, ps = "ExzSlice_k=" + k + ".eps");
-// plot(Th2, ExSlice          , fill=true, value=true, cmm="Ex   magnitude slice at y=0", wait=0, ps =  "ExSlice_k=" + k + ".eps");
-// plot(Th2, EySlice          , fill=true, value=true, cmm="Ey   magnitude slice at y=0", wait=0, ps =  "EySlice_k=" + k + ".eps");
-// plot(Th2, EzSlice          , fill=true, value=true, cmm="Ez   magnitude slice at y=0", wait=0, ps =  "EzSlice_k=" + k + ".eps");
-
-
-// Visualize the results
-// medit("Ex magnitude", Th, ExMag, wait=1);
-// medit("Ey magnitude", Th, EyMag, wait=1);
-// medit("Ez magnitude", Th, EzMag, wait=1);
-// medit("Total E magnitude", Th, EMag, wait=1);
-
-// log << "Max |Ex|: " << ExMag[].max << endl;
-// log << "Max |Ey|: " << EyMag[].max << endl;
-// log << "Max |Ez|: " << EzMag[].max << endl;
-// log << "Max |E|: " << EMag[].max << endl;
-
-
-// medit("TestSolution", Th, [Ex, Ey, Ez], wait=1);
-// medit("TestSolution", Th, Ey, wait=1);
-// medit("TestSolution", Th, Ez, wait=1);
-// medit("TestSolution", Th, AbsS, wait=1);To
-
-
-
-/* Calculate transmittance (and reflectance) spectrum. */
-complex a1, a2, a3, a1other, a2other, a3other, factor, rxx, txx, rxy, txy, ryx, tyx, ryy, tyy;
-int order = 0, order2 = 0, order3 = 0, order4 = 0; // Phase unfolding
-real phase, oldval = 0, oldval2 = 0, oldval3 = 0, oldval4=0; // variables.
-
-log << "# a = " << a * 1e4 << " um" << endl;
-log << "# sigma0 = " << sigma0  << endl;
-log << "# n = " << 1.655603e12 * sigma0 / (abs(kcr1) * tau) <<
-    " 1/cm^2, mu = " << abs(kcr1) * tau << " m^2/Vs" << endl;
-log << "# epsilon = " << dieleps << ", kcr1 = " << kcr1 << " 1/T" << endl;
-log << "# d = " << d << ", kcr = " << kcr << ", k = " << k << endl;
-
-
-
-// real unfold_phase(real oldval, real phase_new){
-//     order = floor(oldval/(2*pi) + 0.5);
-//     if ((oldval > 0) && (phase_new < 0) && (abs(oldval - phase_new) > pi))
-//         order++;
-//     if ((oldval < 0) && (phase_new > 0) && (abs(oldval - phase_new) > pi))
-//         order--;
-//     return phase_new + 2*pi*order;
-// }
-
-log << "Time_from_Epoch = " << ltime() << endl;
-
-log << "time_(s)" << "\t" 
-     << "Frequency_(GHz)" << "\t" 
-     << "k" << "\t" 
-     << "|t_xx|^2"  << "\t" 
-     << "arg(t_xx)" << "\t"
-     << "|r_xx|^2"  << "\t"
-     << "arg(r_xx)" << "\t"
-     << "|t_xy|^2"  << "\t" 
-     << "arg(t_xy)" << "\t"
-     << "|r_xy|^2"  << "\t"
-     << "arg(r_xy)" << "\t"
-     << "|t_yy|^2"  << "\t"
-     << "arg(t_yy)" << "\t"
-     << "|r_yy|^2"  << "\t"
-     << "arg(r_yy)" << "\t"
-     << "|t_yx|^2"  << "\t"
-     << "arg(t_yx)" << "\t"
-     << "|r_yx|^2"  << "\t"
-     << "arg(r_yx)" << "\t"
-     << endl;
-
-log.flush;
-
-for (k = 0.001; k < 10.0; k += 0.0005) {
-// for (k = 0.08; k < 1.0; k += 0.01) {
-    // Assemble system matrix
-    matrix<complex> A = A0 + A1*k + A2*k^2 
-         + VxExCircle * sxx + VxEzCircle * sxy 
-         + VzExCircle * syx + VzEzCircle * syy;
-    set(A, sparams = "-ksp_type cg -ksp_rtol 1e-6 -ksp_initial_guess_nonzero");
-    //Solving for linear Ex polarization
-    polx = 1.0; polz = 0.0;
-    complex[int] b = bPolx * polx + bPolz * polz;
-    Ex[] = A^-1 * b;
-    a1 = int2d(Th, sM1) (polx * Ex + polz * Ez); 
-    a2 = int2d(Th, sM2) (polx * Ex + polz * Ez);
-    a3 = int2d(Th, sM3) (polx * Ex + polz * Ez); 
-    factor = exp(-1i * k * (y2 - y1));
-    rxx = exp(1i * k * (y1 + y2)) * (a1 - a2 * factor) / (a2 - a1 * factor); 
-    txx = 2i * exp(1i * k * (y1 - y3)) * sin(k * (y2 - y1)) * a3 / (a2 - a1 * factor); 
-    a1other = int2d(Th, sM1) (polz * Ex + polx * Ez); 
-    a2other = int2d(Th, sM2) (polz * Ex + polx * Ez);    
-    a3other = int2d(Th, sM3) (polz * Ex + polx * Ez); 
-    rxy = exp(1i * k * (y1 + y2)) * (a1other - a2other * factor) / (a2 - a1 * factor); 
-    txy = 2i * exp(1i * k * (y1 - y3)) * sin(k * (y2 - y1)) * a3other / (a2 - a1 * factor);
-
-    //Solving for linear Ez polarization
-    polx = 0.0; polz = 1.0;
-    b = bPolx * polx + bPolz * polz;
-    Ex[] = A^-1 * b;
-    a1 = int2d(Th, sM1) (polx * Ex + polz * Ez); 
-    a2 = int2d(Th, sM2) (polx * Ex + polz * Ez);
-    a3 = int2d(Th, sM3) (polx * Ex + polz * Ez); 
-    factor = exp(-1i * k * (y2 - y1));
-    ryy = exp(1i * k * (y1 + y2)) * (a1 - a2 * factor) / (a2 - a1 * factor); 
-    tyy = 2i * exp(1i * k * (y1 - y3)) * sin(k * (y2 - y1)) * a3 / (a2 - a1 * factor); 
-    a1other = int2d(Th, sM1) (polz * Ex + polx * Ez); 
-    a2other = int2d(Th, sM2) (polz * Ex + polx * Ez);    
-    a3other = int2d(Th, sM3) (polz * Ex + polx * Ez); 
-    ryx = exp(1i * k * (y1 + y2)) * (a1other - a2other * factor) / (a2 - a1 * factor); 
-    tyx = 2i * exp(1i * k * (y1 - y3)) * sin(k * (y2 - y1)) * a3other / (a2 - a1 * factor);
-
-
-    // phase = unfold_phase(phase, arg(t_par));
-    log << clock() << "\t" 
-        << f << "\t" 
-        << k << "\t" 
-        << abs(txx)^2 << "\t" 
-        << arg(txx) << "\t" 
-        << abs(rxx)^2 << "\t" 
-        << arg(rxx) << "\t"
-        << abs(txy)^2 << "\t" 
-        << arg(txy) << "\t" 
-        << abs(rxy)^2 << "\t" 
-        << arg(rxy) << "\t"
-        << abs(tyy)^2 << "\t" 
-        << arg(tyy) << "\t" 
-        << abs(ryy)^2 << "\t" 
-        << arg(ryy) << "\t"
-        << abs(tyx)^2 << "\t" 
-        << arg(tyx) << "\t" 
-        << abs(ryx)^2 << "\t" 
-        << arg(ryx) 
-        << endl;
-    log.flush;
+for (int i = 0; i < m; i++){
+    cout << "lambda[" << i << "] = " << ev[i] << endl;
+    // medit("U",Th,eV[i]);
+    plot(eV[i], cmm="Eigen Vector "+i+" value ="+ev[i], wait=true, value=true);
+    savevtk("solution_lambda_"+ev[i]+".vtk", Th, eV[i], dataname="u");
 }

@@ -7,7 +7,7 @@ Mesh.SaveAll = 0;
 
 /* Parameters. */
 period_x = 25.0;				// Real period of the stripes [um].
-period_z = 25.0;				// Real period in z direction [um].
+period_z = period_x;				// Real period in z direction [um].
 p_z = period_z / period_x; // 
 r = 6 / period_x;					// Radius of the circle [um].
 d = 54.0 / period_x;			// Dielectric thickness.
@@ -18,7 +18,7 @@ source = m1 - 0.5;			// Radiation source plane.
 inlen = source - 0.5;			// Length of incident side.
 outlen = m3 + 0.5;			// Length of outgoing side.
 h_min = 1e-3;				// Minimal element size and distance.
-h_max = 0.08;				// Maximal element size.
+h_max = 0.03        ;				// Maximal element size.
 l_max = 0.05;				// Distance to maximal size.
 
 /* Mesh scaling factor to avoid triangles with area < 1e-8. */
